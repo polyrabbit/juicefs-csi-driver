@@ -616,6 +616,28 @@ func TestParseSecret(t *testing.T) {
 	}
 }
 
+func TestPodMount_default_clean_cache(t *testing.T) {
+	s, err := ParseSetting(map[string]string{"name": "test"}, nil, []string{}, true, nil, nil)
+	if err != nil {
+		t.Errorf("ParseSetting() error = %v", err)
+		return
+	}
+	if !s.CleanCache {
+		t.Errorf("default clean cache is not true")
+		return
+	}
+	s, _ = ParseSetting(map[string]string{"name": "test"}, map[string]string{cleanCache: "true"}, []string{}, true, nil, nil)
+	if !s.CleanCache {
+		t.Errorf("clean cache is not true from setting")
+		return
+	}
+	s, _ = ParseSetting(map[string]string{"name": "test"}, map[string]string{cleanCache: "false"}, []string{}, true, nil, nil)
+	if s.CleanCache {
+		t.Errorf("clean cache is not false from setting")
+		return
+	}
+}
+
 func Test_parseYamlOrJson(t *testing.T) {
 	jsonDst := make(map[string]string)
 	yamlDst := make(map[string]string)

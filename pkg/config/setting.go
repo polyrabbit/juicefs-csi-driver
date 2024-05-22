@@ -142,7 +142,8 @@ type CacheInlineVolume struct {
 
 func ParseSetting(secrets, volCtx map[string]string, options []string, usePod bool, pv *corev1.PersistentVolume, pvc *corev1.PersistentVolumeClaim) (*JfsSetting, error) {
 	jfsSetting := JfsSetting{
-		Options: []string{},
+		Options:    []string{},
+		CleanCache: true,
 	}
 	if options != nil {
 		jfsSetting.Options = options
@@ -318,8 +319,8 @@ func ParseSetting(secrets, volCtx map[string]string, options []string, usePod bo
 			jfsSetting.SubPath = volCtx["subPath"]
 		}
 
-		if volCtx[cleanCache] == "true" {
-			jfsSetting.CleanCache = true
+		if volCtx[cleanCache] == "false" {
+			jfsSetting.CleanCache = false
 		}
 		delay := volCtx[deleteDelay]
 		if delay != "" {

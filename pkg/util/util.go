@@ -431,3 +431,8 @@ func ParseToBytes(value string) (uint64, error) {
 
 	return uint64(val), nil
 }
+
+// GetRandomPort returns a random port number between [start, end).
+func GetRandomPort(start, end int) int {
+	return rand.Intn(end-start) + start
+}

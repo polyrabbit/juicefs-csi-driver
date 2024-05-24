@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-FROM juicedata/juicefs-csi-driver:nightly
+FROM hub.i.basemind.com/csi/juicedata/juicefs-csi-driver:v0.24.0
 
 COPY juicefs-csi-driver /usr/local/bin/juicefs-csi-driver
 

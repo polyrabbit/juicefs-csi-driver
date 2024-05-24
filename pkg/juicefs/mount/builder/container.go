@@ -37,10 +37,7 @@ var _ SidecarInterface = &ContainerBuilder{}
 
 func NewContainerBuilder(setting *config.JfsSetting, capacity int64) SidecarInterface {
 	return &ContainerBuilder{
-		PodBuilder{BaseBuilder{
-			jfsSetting: setting,
-			capacity:   capacity,
-		}},
+		PodBuilder: *NewPodBuilder(setting, capacity),
 	}
 }
 

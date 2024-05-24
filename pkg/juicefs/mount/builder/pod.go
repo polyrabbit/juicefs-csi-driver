@@ -33,10 +33,7 @@ type PodBuilder struct {
 
 func NewPodBuilder(setting *config.JfsSetting, capacity int64) *PodBuilder {
 	return &PodBuilder{
-		BaseBuilder: BaseBuilder{
-			jfsSetting: setting,
-			capacity:   capacity,
-		},
+		BaseBuilder: *NewBaseBuilder(setting, capacity),
 	}
 }
 

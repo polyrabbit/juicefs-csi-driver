@@ -41,8 +41,18 @@ const (
 )
 
 type BaseBuilder struct {
-	jfsSetting *config.JfsSetting
-	capacity   int64
+	jfsSetting  *config.JfsSetting
+	capacity    int64
+	metricsPort int32
+}
+
+func NewBaseBuilder(setting *config.JfsSetting, capacity int64) *BaseBuilder {
+	r := &BaseBuilder{
+		jfsSetting: setting,
+		capacity:   capacity,
+	}
+	r.metricsPort = r.genMetricsPort()
+	return r
 }
 
 // genPodTemplate generates a pod template from csi pod
@@ -118,15 +128,12 @@ func (r *BaseBuilder) genCommonJuicePod(cnGen func() corev1.Container) *corev1.P
 	pod.Spec.Containers[0].LivenessProbe = r.jfsSetting.Attr.LivenessProbe
 	pod.Spec.Containers[0].ReadinessProbe = r.jfsSetting.Attr.ReadinessProbe
 
-	if r.jfsSetting.Attr.HostNetwork || !r.jfsSetting.IsCe {
-		// When using hostNetwork, the MountPod will use a random port for metrics.
-		// Before inducing any auxiliary method to detect that random port, the
-		// best way is to avoid announcing any port about that.
+	if !r.jfsSetting.IsCe {
 		// Enterprise edition does not have metrics port.
 		pod.Spec.Containers[0].Ports = []corev1.ContainerPort{}
 	} else {
 		pod.Spec.Containers[0].Ports = []corev1.ContainerPort{
-			{Name: "metrics", ContainerPort: r.genMetricsPort()},
+			{Name: "metrics", ContainerPort: r.metricsPort},
 		}
 	}
 	return pod
@@ -142,7 +149,7 @@ func (r *BaseBuilder) genMountCommand() string {
 		if !util.ContainsPrefix(options, "metrics=") {
 			if r.jfsSetting.Attr.HostNetwork {
 				// Pick up a random (useable) port for hostNetwork MountPods.
-				options = append(options, "metrics=0.0.0.0:0")
+				options = append(options, fmt.Sprintf("metrics=0.0.0.0:%d", r.metricsPort))
 			} else {
 				options = append(options, "metrics=0.0.0.0:9567")
 			}
@@ -240,6 +247,9 @@ func (r *BaseBuilder) getJobCommand() string {
 }
 
 // genMetricsPort generates metrics port
+// 1. if metrics port is set in options, use it
+// 2. if hostNetwork and no metrics port in options, use a random port in range
+// 3. default 9567
 func (r *BaseBuilder) genMetricsPort() int32 {
 	port := int64(9567)
 	options := r.jfsSetting.Options
@@ -250,8 +260,13 @@ func (r *BaseBuilder) genMetricsPort() int32 {
 			match := re.FindStringSubmatch(option)
 			if len(match) > 0 {
 				port, _ = strconv.ParseInt(match[1], 10, 32)
+				return int32(port)
 			}
 		}
+	}
+
+	if r.jfsSetting.Attr.HostNetwork {
+		port = int64(util.GetRandomPort(config.MountPodMetricsPortRangeStart, config.MountPodMetricsPortRangeEnd))
 	}
 
 	return int32(port)

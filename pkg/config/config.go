@@ -76,6 +76,9 @@ var (
 
 	DefaultCEMountImage = "juicedata/mount:ce-nightly" // mount pod ce image, override by ENV
 	DefaultEEMountImage = "juicedata/mount:ee-nightly" // mount pod ee image, override by ENV
+
+	MountPodMetricsPortRangeStart = GetMountPodMetricsPortStart()
+	MountPodMetricsPortRangeEnd   = GetMountPodMetricsPortEnd()
 )
 
 const (
@@ -136,6 +139,10 @@ const (
 	DefaultMountPodMemLimit   = "5Gi"
 	DefaultMountPodCpuRequest = "1000m"
 	DefaultMountPodMemRequest = "1Gi"
+
+	// Default Mount Pod Metrics Port Range
+	DefaultMountPodMetricsPortRangeStart = "50000"
+	DefaultMountPodMetricsPortRangeEnd   = "60000"
 )
 
 var PodLocks [1024]sync.Mutex
@@ -157,6 +164,30 @@ func MustGetWebPort() int {
 		klog.Errorf("Fail to parse JUICEFS_CSI_WEB_PORT %s: %v", value, err)
 	}
 	return 8080
+}
+
+func GetMountPodMetricsPortStart() int {
+	startVal, exists := os.LookupEnv("JUICEFS_MOUNT_POD_METRICS_PORT_START")
+	if !exists {
+		startVal = DefaultMountPodMetricsPortRangeStart
+	}
+	start, err := strconv.Atoi(startVal)
+	if err != nil {
+		start, _ = strconv.Atoi(DefaultMountPodMetricsPortRangeStart)
+	}
+	return start
+}
+
+func GetMountPodMetricsPortEnd() int {
+	endVal, exists := os.LookupEnv("JUICEFS_MOUNT_POD_METRICS_PORT_END")
+	if !exists {
+		endVal = DefaultMountPodMetricsPortRangeEnd
+	}
+	end, err := strconv.Atoi(endVal)
+	if err != nil {
+		end, _ = strconv.Atoi(DefaultMountPodMetricsPortRangeEnd)
+	}
+	return end
 }
 
 type MountPodPatch struct {

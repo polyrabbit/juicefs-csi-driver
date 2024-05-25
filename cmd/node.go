@@ -204,6 +204,7 @@ func nodeRun(ctx context.Context) {
 		drv.Stop()
 	}()
 
+	registerer.MustRegister(config.CacheDirGauge)
 	if err := drv.Run(); err != nil {
 		klog.Fatalln(err)
 	}

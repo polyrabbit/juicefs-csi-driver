@@ -290,6 +290,9 @@ func (r *BaseBuilder) getJobCommand() string {
 func (r *BaseBuilder) genMetricsPort() int32 {
 	port := int64(9567)
 	options := r.jfsSetting.Options
+	defer func() {
+		klog.Infof("Metrics port for %v is %v", r.jfsSetting.Name, port)
+	}()
 
 	for _, option := range options {
 		if strings.HasPrefix(option, "metrics=") {
@@ -303,7 +306,7 @@ func (r *BaseBuilder) genMetricsPort() int32 {
 	}
 
 	if r.jfsSetting.Attr.HostNetwork {
-		port = int64(util.GetRandomPort(config.MountPodMetricsPortRangeStart, config.MountPodMetricsPortRangeEnd))
+		port = int64(util.GetAvailablePort())
 	}
 
 	return int32(port)

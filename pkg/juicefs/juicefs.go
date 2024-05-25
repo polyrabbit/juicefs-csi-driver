@@ -49,7 +49,7 @@ import (
 )
 
 const (
-	defaultCheckTimeout = 2 * time.Second
+	defaultCheckTimeout = 5 * time.Second
 	fsTypeNone          = "none"
 	procMountInfoPath   = "/proc/self/mountinfo"
 )
@@ -939,7 +939,7 @@ func (j *juicefs) ceFormat(ctx context.Context, secrets map[string]string, noUpd
 
 	args := []string{"format"}
 	cmdArgs := []string{config.CeCliPath, "format"}
-	if noUpdate {
+	if noUpdate || true {
 		cmdArgs = append(cmdArgs, "--no-update")
 		args = append(args, "--no-update")
 	}

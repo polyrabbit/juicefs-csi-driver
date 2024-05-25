@@ -77,9 +77,6 @@ var (
 
 	DefaultCEMountImage = "juicedata/mount:ce-nightly" // mount pod ce image, override by ENV
 	DefaultEEMountImage = "juicedata/mount:ee-nightly" // mount pod ee image, override by ENV
-
-	MountPodMetricsPortRangeStart = GetMountPodMetricsPortStart()
-	MountPodMetricsPortRangeEnd   = GetMountPodMetricsPortEnd()
 )
 
 const (
@@ -138,10 +135,10 @@ const (
 	DeleteDelayAtKey   = "juicefs-delete-at"
 
 	// default value
-	DefaultMountPodCpuLimit   = "2000m"
-	DefaultMountPodMemLimit   = "5Gi"
-	DefaultMountPodCpuRequest = "1000m"
-	DefaultMountPodMemRequest = "1Gi"
+	DefaultMountPodCpuLimit   = "20000m"
+	DefaultMountPodMemLimit   = "100Gi" // to avoid being OOM killed due to large page cache usage
+	DefaultMountPodCpuRequest = "0" // avoid preemption
+	DefaultMountPodMemRequest = "0"
 
 	// Default Mount Pod Metrics Port Range
 	DefaultMountPodMetricsPortRangeStart = "20000"
@@ -191,30 +188,6 @@ func MustGetWebPort() int {
 		klog.Errorf("Fail to parse JUICEFS_CSI_WEB_PORT %s: %v", value, err)
 	}
 	return 8080
-}
-
-func GetMountPodMetricsPortStart() int {
-	startVal, exists := os.LookupEnv("JUICEFS_MOUNT_POD_METRICS_PORT_START")
-	if !exists {
-		startVal = DefaultMountPodMetricsPortRangeStart
-	}
-	start, err := strconv.Atoi(startVal)
-	if err != nil {
-		start, _ = strconv.Atoi(DefaultMountPodMetricsPortRangeStart)
-	}
-	return start
-}
-
-func GetMountPodMetricsPortEnd() int {
-	endVal, exists := os.LookupEnv("JUICEFS_MOUNT_POD_METRICS_PORT_END")
-	if !exists {
-		endVal = DefaultMountPodMetricsPortRangeEnd
-	}
-	end, err := strconv.Atoi(endVal)
-	if err != nil {
-		end, _ = strconv.Atoi(DefaultMountPodMetricsPortRangeEnd)
-	}
-	return end
 }
 
 type PVCSelector struct {
@@ -414,7 +387,7 @@ func (c *Config) GenMountPodPatch(setting JfsSetting) MountPodPatch {
 	strData = strings.ReplaceAll(strData, "${VOLUME_NAME}", setting.Name)
 	strData = strings.ReplaceAll(strData, "${SUB_PATH}", setting.SubPath)
 	_ = json.Unmarshal([]byte(strData), patch)
-	klog.V(6).Infof("volume %s using patch: %+v", setting.VolumeId, patch)
+	klog.V(5).Infof("volume %s using patch: %+v", setting.VolumeId, patch)
 	return *patch
 }
 

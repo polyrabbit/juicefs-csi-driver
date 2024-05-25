@@ -26,6 +26,7 @@ import (
 	"os/exec"
 	"regexp"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -409,9 +410,9 @@ func (p *PodMount) waitUtilMountReady(ctx context.Context, jfsSetting *jfsConfig
 	log, err := p.getErrContainerLog(ctx, podName)
 	if err != nil {
 		klog.Errorf("Get pod %s log error %v", podName, err)
-		return fmt.Errorf("mount %v at %v failed: mount isn't ready in 30 seconds", util.StripPasswd(jfsSetting.Source), jfsSetting.MountPath)
+		return fmt.Errorf("mount at %v failed: mount isn't ready in 60 seconds", jfsSetting.MountPath)
 	}
-	return fmt.Errorf("mount %v at %v failed, mountpod: %s, failed log: %v", util.StripPasswd(jfsSetting.Source), jfsSetting.MountPath, podName, log)
+	return fmt.Errorf("mount at %v failed, mountpod: %s, failed log: %v", jfsSetting.MountPath, podName, log)  // donot expose tikv address
 }
 
 func (p *PodMount) waitUtilJobCompleted(ctx context.Context, jobName string) error {
@@ -517,8 +518,21 @@ func (p *PodMount) setMountLabel(ctx context.Context, uniqueId, mountPodName str
 	return nil
 }
 
+// When tikv is under heavy load, `juicefs status` usually times out - blocking user's job from starting. Add caching here as we have limited volumes.
+var (
+	mu        sync.Mutex
+	uuidCache = make(map[string]string)
+)
+
 // GetJfsVolUUID get UUID from result of `juicefs status <volumeName>`
 func (p *PodMount) GetJfsVolUUID(ctx context.Context, jfsSetting *jfsConfig.JfsSetting) (string, error) {
+	mu.Lock()
+	cachedUUID, ok := uuidCache[jfsSetting.Source]
+	mu.Unlock()
+	if ok && cachedUUID != "" {
+		return cachedUUID, nil
+	}
+
 	cmdCtx, cmdCancel := context.WithTimeout(ctx, 8*defaultCheckTimeout)
 	defer cmdCancel()
 	statusCmd := p.Exec.CommandContext(cmdCtx, jfsConfig.CeCliPath, "status", jfsSetting.Source)
@@ -543,6 +557,12 @@ func (p *PodMount) GetJfsVolUUID(ctx context.Context, jfsSetting *jfsConfig.JfsS
 	idStrs := strings.Split(idStr, "\"")
 	if len(idStrs) < 4 {
 		return "", fmt.Errorf("get uuid of %s error", jfsSetting.Source)
+	}
+
+	if jfsSetting.Source != "" && idStrs[3] != "" {
+		mu.Lock()
+		uuidCache[jfsSetting.Source] = idStrs[3]
+		mu.Unlock()
 	}
 
 	return idStrs[3], nil

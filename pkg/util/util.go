@@ -30,6 +30,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -433,19 +434,29 @@ func ParseToBytes(value string) (uint64, error) {
 	return uint64(val), nil
 }
 
-// GetRandomPort returns a random port number between [start, end).
-func GetRandomPort(start, end int) int {
-	port := rand.Intn(end-start) + start
-	for i := 0; i < 100; i++ {
+var nextPort int32 = 20000-1
+
+// GetAvailablePort returns next available port number between [20000, 30000) in thread-safe way.
+func GetAvailablePort() int {
+	const (
+		startPort = 20000-1
+		endPort   = 30000
+		maxTries  = 10000
+	)
+	for i := 0; i < maxTries; i++ {
+		port := atomic.AddInt32(&nextPort, 1)
+		if port >= endPort {
+			// Wrap around to stay in range
+			atomic.CompareAndSwapInt32(&nextPort, port, startPort)
+			continue
+		}
 		// Test if port is available by listen on it
 		l, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
 		if err == nil {
-			_ = l.Close()
-			break
-		} else {
-			klog.Warningf("Port %d is not available: %v, will roll again", port, err)
-			port = rand.Intn(end-start) + start
+			l.Close()
+			return int(port)
 		}
 	}
-	return port
+	klog.Warningf("Failed to find available port after %d tries, using random port", maxTries)
+	return rand.Intn(endPort-startPort) + startPort
 }

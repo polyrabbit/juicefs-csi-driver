@@ -135,8 +135,8 @@ const (
 	DeleteDelayAtKey   = "juicefs-delete-at"
 
 	// default value
-	DefaultMountPodCpuLimit   = "2000m"
-	DefaultMountPodMemLimit   = "5Gi"
+	DefaultMountPodCpuLimit   = "20000m"
+	DefaultMountPodMemLimit   = "20Gi"
 	DefaultMountPodCpuRequest = "1000m"
 	DefaultMountPodMemRequest = "1Gi"
 

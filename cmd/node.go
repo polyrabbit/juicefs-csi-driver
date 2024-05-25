@@ -192,6 +192,7 @@ func nodeRun() {
 	if err != nil {
 		klog.Fatalln(err)
 	}
+	registerer.MustRegister(config.CacheDirGauge)
 	if err := drv.Run(); err != nil {
 		klog.Fatalln(err)
 	}

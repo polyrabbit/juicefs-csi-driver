@@ -254,6 +254,11 @@ func ParseSetting(secrets, volCtx map[string]string, options []string, usePod bo
 		}
 	}
 
+	if len(dirs) == 0 {
+		// set default cache dir
+		cacheDirs = LocalCacheDir()
+		dirs = cacheDirs
+	}
 	cacheDir := strings.Join(dirs, ":")
 	if cacheDir != "" {
 		// replace cacheDir in option
@@ -261,10 +266,6 @@ func ParseSetting(secrets, volCtx map[string]string, options []string, usePod bo
 		jfsSetting.Options = options
 	}
 
-	if len(dirs) == 0 {
-		// set default cache dir
-		cacheDirs = []string{"/var/jfsCache"}
-	}
 	for _, d := range cacheDirs {
 		if d != "memory" {
 			// filter out "memory"

@@ -42,7 +42,7 @@ var (
 	nodeCaps = []csi.NodeServiceCapability_RPC_Type{csi.NodeServiceCapability_RPC_GET_VOLUME_STATS}
 )
 
-const defaultCheckTimeout = 2 * time.Second
+const defaultCheckTimeout = 10 * time.Second
 
 type nodeService struct {
 	mount.SafeFormatAndMount

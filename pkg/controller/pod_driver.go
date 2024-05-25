@@ -42,7 +42,7 @@ import (
 )
 
 const (
-	defaultCheckoutTimeout   = 1 * time.Second
+	defaultCheckoutTimeout   = 10 * time.Second
 	defaultTargetMountCounts = 5
 )
 

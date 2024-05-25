@@ -34,7 +34,7 @@ import (
 	"github.com/juicedata/juicefs-csi-driver/pkg/util"
 )
 
-const defaultCheckTimeout = 2 * time.Second
+const defaultCheckTimeout = 8 * time.Second // some far clients have long latency
 
 type ProcessMount struct {
 	k8sMount.SafeFormatAndMount

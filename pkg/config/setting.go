@@ -143,8 +143,9 @@ type CacheInlineVolume struct {
 
 func ParseSetting(secrets, volCtx map[string]string, options []string, usePod bool, pv *corev1.PersistentVolume, pvc *corev1.PersistentVolumeClaim) (*JfsSetting, error) {
 	jfsSetting := JfsSetting{
-		Options:    []string{},
-		CleanCache: true,
+		Options:      []string{},
+		CleanCache:   true,
+		DeletedDelay: "5m",
 	}
 	if options != nil {
 		jfsSetting.Options = options
@@ -325,6 +326,14 @@ func genCacheDirs(jfsSetting *JfsSetting, volCtx map[string]string) error {
 	// parse cache dirs in option
 	var cacheDirsInOptions []string
 	options := jfsSetting.Options
+
+	// parse cacheDir in option
+	var (
+		cacheExpire  bool
+		freeSpaceSet bool
+		gpfsCache    bool
+		gpfsSuite    bool
+	)
 	for i, o := range options {
 		if strings.HasPrefix(o, "cache-dir") {
 			optValPair := strings.Split(o, "=")
@@ -334,13 +343,25 @@ func genCacheDirs(jfsSetting *JfsSetting, volCtx map[string]string) error {
 			cacheDirsInOptions = strings.Split(strings.TrimSpace(optValPair[1]), ":")
 			cacheDirsInContainer = append(cacheDirsInContainer, cacheDirsInOptions...)
 			options = append(options[:i], options[i+1:]...)
-			break
+			// break
+		}
+		if strings.HasPrefix(o, "gpfs-suite") {
+			gpfsSuite = true
+			options = append(options[:i], options[i+1:]...)
+		}
+		if strings.HasPrefix(o, "free-space-ratio=") {
+			freeSpaceSet = true
+		}
+		if strings.HasPrefix(o, "cache-expire") {
+			cacheExpire = true
 		}
 	}
 	if len(cacheDirsInContainer) == 0 {
 		// set default cache dir
-		cacheDirsInOptions = []string{"/var/jfsCache"}
+		cacheDirsInOptions, gpfsCache = LocalCacheDir(gpfsSuite)
+		cacheDirsInContainer = cacheDirsInOptions
 	}
+
 	for _, d := range cacheDirsInOptions {
 		if d != "memory" {
 			// filter out "memory"
@@ -349,8 +370,31 @@ func genCacheDirs(jfsSetting *JfsSetting, volCtx map[string]string) error {
 	}
 
 	// replace cacheDir in option
+	if len(cacheDirsInContainer) > 1 {
+		klog.Warningf("Multiple cache dirs not well supported: %v", cacheDirsInContainer)
+	}
 	if len(cacheDirsInContainer) > 0 {
 		options = append(options, fmt.Sprintf("cache-dir=%s", strings.Join(cacheDirsInContainer, ":")))
+
+		d := cacheDirsInContainer[0]
+		if inRootVolume(hostRoot + d) {
+			if !freeSpaceSet { // use less in sys volume
+				options = append(options, "free-space-ratio=0.5")
+			}
+		} else if gpfsCache {
+			jfsSetting.CleanCache = false // Otherwise, one pod may clean cache of another pod, because they share the same FS. Leave stale cache to other peers to clean
+			if gpfsSuite {
+				options = append(options, "shared-cache", "writeback", "max-stage-write=20", "free-space-ratio=0.1")
+				if !cacheExpire {
+					// hostName, _ := os.Hostname()
+					options = append(options, "cache-expire=1d")
+					// if strings.HasSuffix(hostName, "shaipower.com") {
+					// } else if strings.HasSuffix(hostName, "basemind.com") {
+					// 	options = append(options, "cache-expire=3d")
+					// }
+				}
+			}
+		}
 		jfsSetting.Options = options
 	}
 	return nil

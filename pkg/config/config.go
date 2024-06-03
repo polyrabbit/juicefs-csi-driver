@@ -142,8 +142,8 @@ const (
 	DefaultMountPodMemRequest = "1Gi"
 
 	// Default Mount Pod Metrics Port Range
-	DefaultMountPodMetricsPortRangeStart = "50000"
-	DefaultMountPodMetricsPortRangeEnd   = "60000"
+	DefaultMountPodMetricsPortRangeStart = "20000"
+	DefaultMountPodMetricsPortRangeEnd   = "30000"
 
 	// secret labels
 	JuicefsSecretLabelKey = "juicefs/secret"

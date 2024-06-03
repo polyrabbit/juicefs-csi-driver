@@ -21,6 +21,7 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"math/rand"
+	"net"
 	"net/url"
 	"os"
 	"os/exec"
@@ -434,5 +435,17 @@ func ParseToBytes(value string) (uint64, error) {
 
 // GetRandomPort returns a random port number between [start, end).
 func GetRandomPort(start, end int) int {
-	return rand.Intn(end-start) + start
+	port := rand.Intn(end-start) + start
+	for i := 0; i < 100; i++ {
+		// Test if port is available by listen on it
+		l, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
+		if err == nil {
+			_ = l.Close()
+			break
+		} else {
+			klog.Warningf("Port %d is not available: %v, will roll again", port, err)
+			port = rand.Intn(end-start) + start
+		}
+	}
+	return port
 }

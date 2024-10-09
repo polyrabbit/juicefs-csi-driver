@@ -24,6 +24,8 @@ import (
 	"strconv"
 	"strings"
 
+	"k8s.io/apimachinery/pkg/api/resource"
+
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/klog"
@@ -83,6 +85,39 @@ func (r *BaseBuilder) genPodTemplate(baseCnGen func() corev1.Container) *corev1.
 	}
 }
 
+// genSidecarContainer generates a sidecar container
+func (r *BaseBuilder) genSidecarContainer(mainCn corev1.Container) *corev1.Container {
+	sidecarCommand := r.jfsSetting.Attr.SideCarCommand
+	if sidecarCommand == "" {
+		return nil
+	}
+	isPrivileged := true
+	if strings.Contains(sidecarCommand, "${MOUNT_POINT}") {
+		sidecarCommand = strings.ReplaceAll(sidecarCommand, "${MOUNT_POINT}", r.jfsSetting.MountPath)
+	}
+	c := &corev1.Container{
+		Name:         "jfs-sidecar",
+		Image:        mainCn.Image,
+		Command:      []string{"sh", "-c", sidecarCommand},
+		VolumeMounts: mainCn.VolumeMounts,
+		SecurityContext: &corev1.SecurityContext{
+			Privileged: &isPrivileged,
+		},
+		Resources: corev1.ResourceRequirements{
+			Requests: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("100m"),
+				corev1.ResourceMemory: resource.MustParse("128Mi"),
+			},
+			Limits: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("100m"),
+				corev1.ResourceMemory: resource.MustParse("128Mi"),
+			},
+		},
+	}
+	klog.V(5).Infof("sidecar: %+v", c)
+	return c
+}
+
 // genCommonJuicePod generates a pod with common settings
 func (r *BaseBuilder) genCommonJuicePod(cnGen func() corev1.Container) *corev1.Pod {
 	// gen again to update the mount pod spec
@@ -138,6 +173,7 @@ func (r *BaseBuilder) genCommonJuicePod(cnGen func() corev1.Container) *corev1.P
 			{Name: "metrics", ContainerPort: r.metricsPort},
 		}
 	}
+
 	return pod
 }
 

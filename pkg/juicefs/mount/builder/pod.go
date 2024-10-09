@@ -80,6 +80,11 @@ func (r *PodBuilder) NewMountPod(podName string) *corev1.Pod {
 		pod.Spec.Containers[0].VolumeDevices = append(pod.Spec.Containers[0].VolumeDevices, r.jfsSetting.Attr.VolumeDevices...)
 	}
 
+	sidecarContainer := r.genSidecarContainer(pod.Spec.Containers[0])
+	if sidecarContainer != nil {
+		pod.Spec.Containers = append(pod.Spec.Containers, *sidecarContainer)
+	}
+
 	return pod
 }
 

@@ -130,6 +130,8 @@ const (
 	cacheEmptyDir          = "juicefs/mount-cache-emptydir"
 	cacheInlineVolume      = "juicefs/mount-cache-inline-volume"
 	mountPodHostPath       = "juicefs/host-path"
+	sidecarCommandKey      = "juicefs/sidecar-command"
+	defaultSidecarCommand  = `cat ${MOUNT_POINT}/.accesslog`
 
 	// DeleteDelayTimeKey mount pod annotation
 	DeleteDelayTimeKey = "juicefs-delete-delay"
@@ -245,6 +247,7 @@ type MountPodPatch struct {
 	VolumeMounts                  []corev1.VolumeMount         `json:"volumeMounts,omitempty"`
 	Env                           []corev1.EnvVar              `json:"env,omitempty"`
 	MountOptions                  []string                     `json:"mountOptions,omitempty"`
+	SideCarCommand                string                       `json:"sideCarCommand,omitempty"`
 }
 
 func (mpp *MountPodPatch) isMatch(pvc *corev1.PersistentVolumeClaim) bool {
@@ -310,6 +313,9 @@ func (mpp *MountPodPatch) merge(mp MountPodPatch) {
 	}
 	if mp.TerminationGracePeriodSeconds != nil {
 		mpp.TerminationGracePeriodSeconds = mp.TerminationGracePeriodSeconds
+	}
+	if mp.SideCarCommand != "" {
+		mpp.SideCarCommand = mp.SideCarCommand
 	}
 	vok := make(map[string]bool)
 	if mp.Volumes != nil {

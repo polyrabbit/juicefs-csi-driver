@@ -117,6 +117,7 @@ type PodAttr struct {
 	ImagePullSecrets []corev1.LocalObjectReference
 	PreemptionPolicy *corev1.PreemptionPolicy
 	Tolerations      []corev1.Toleration
+	SideCarCommand   string
 }
 
 // info of app pod
@@ -436,6 +437,11 @@ func GenPodAttrWithCfg(setting *JfsSetting, volCtx map[string]string) error {
 		memoryLimit := volCtx[MountPodMemLimitKey]
 		cpuRequest := volCtx[MountPodCpuRequestKey]
 		memoryRequest := volCtx[MountPodMemRequestKey]
+		sidecarCommand := volCtx[sidecarCommandKey]
+		if sidecarCommand == "true" {
+			sidecarCommand = defaultSidecarCommand
+		}
+		attr.SideCarCommand = sidecarCommand
 		attr.Resources, err = ParsePodResources(cpuLimit, memoryLimit, cpuRequest, memoryRequest)
 		if err != nil {
 			klog.Errorf("Parse resource error: %v", err)
@@ -723,6 +729,9 @@ func applyConfigPatch(setting *JfsSetting) {
 	}
 	if patch.Resources != nil {
 		attr.Resources = *patch.Resources
+	}
+	if patch.SideCarCommand != "" {
+		attr.SideCarCommand = patch.SideCarCommand
 	}
 	attr.Lifecycle = patch.Lifecycle
 	attr.LivenessProbe = patch.LivenessProbe

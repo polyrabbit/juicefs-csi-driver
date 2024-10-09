@@ -12,6 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+ifeq ($(shell which docker 2>/dev/null),)
+  CONTAINER_CMD := nerdctl
+else
+  CONTAINER_CMD := docker
+endif
+
 IMAGE?=hub.i.basemind.com/csi/juicedata/juicefs-csi-driver
 REGISTRY?=docker.io
 DASHBOARD_IMAGE?=juicedata/csi-dashboard
@@ -89,26 +95,14 @@ uninstall: yaml
 # build dev image
 .PHONY: image-dev
 image-dev: juicefs-csi-driver dashboard
-	docker build --build-arg TARGETARCH=$(TARGETARCH) -t $(IMAGE):$(DEV_TAG) -f docker/dev.Dockerfile bin
+	$(CONTAINER_CMD) build --build-arg TARGETARCH=$(TARGETARCH) -t $(IMAGE):$(DEV_TAG) -f docker/dev.Dockerfile bin
 	#docker build --build-context project=. --build-context ui=dashboard-ui-v2/ -f docker/dashboard.Dockerfile \
 #		-t $(REGISTRY)/$(DASHBOARD_IMAGE):$(DEV_TAG) .
 
 # push dev image
 .PHONY: push-dev
 push-dev:
-ifeq ("$(DEV_K8S)", "microk8s")
-	docker image save -o juicefs-csi-driver-$(DEV_TAG).tar $(IMAGE):$(DEV_TAG)
-	sudo microk8s.ctr image import juicefs-csi-driver-$(DEV_TAG).tar
-	rm -f juicefs-csi-driver-$(DEV_TAG).tar
-	docker image save -o juicefs-csi-dashboard-$(DEV_TAG).tar $(REGISTRY)/$(DASHBOARD_IMAGE):$(DEV_TAG)
-	sudo microk8s.ctr image import juicefs-csi-dashboard-$(DEV_TAG).tar
-	rm -f juicefs-csi-dashboard-$(DEV_TAG).tar
-else ifeq ("$(DEV_K8S)", "kubeadm")
-	docker tag $(IMAGE):$(DEV_TAG) $(DEV_REGISTRY):$(DEV_TAG)
-	docker push $(DEV_REGISTRY):$(DEV_TAG)
-else
-	minikube cache add $(IMAGE):$(DEV_TAG)
-endif
+	$(CONTAINER_CMD) push $(IMAGE):$(DEV_TAG)
 
 .PHONY: deploy-dev/kustomization.yaml
 deploy-dev/kustomization.yaml:

@@ -118,6 +118,101 @@ func Test_container_nvme(t *testing.T) {
 	}
 }
 
+func Test_findNVMeMountpoint_prefers_larger_disk(t *testing.T) {
+	LsblkJson := `{
+   "blockdevices": [
+      {"name":"nvme1n1", "type":"disk", "size":"1T", "tran":"nvme", "mountpoint":"/.host/mnt/nvme9n1"},
+      {"name":"nvme2n1", "type":"disk", "size":"2T", "tran":"nvme", "mountpoint":"/.host/mnt/nvme2n1"}
+   ]
+}`
+	if findNVMeMountpointForHost([]byte(LsblkJson), "worker") != "/mnt/nvme2n1" {
+		t.Errorf("findNVMeMountpointForHost() = %v, want %v", findNVMeMountpointForHost([]byte(LsblkJson), "worker"), "/mnt/nvme2n1")
+	}
+}
+
+func Test_findNVMeMountpoint_prefers_later_mountpoint_when_same_size(t *testing.T) {
+	LsblkJson := `{
+   "blockdevices": [
+      {"name":"nvme1n1", "type":"disk", "size":"2T", "tran":"nvme", "mountpoint":"/.host/mnt/nvme3n1"},
+      {"name":"nvme2n1", "type":"disk", "size":"2T", "tran":"nvme", "mountpoint":"/.host/mnt/nvme2n1"}
+   ]
+}`
+	if findNVMeMountpointForHost([]byte(LsblkJson), "worker") != "/mnt/nvme3n1" {
+		t.Errorf("findNVMeMountpointForHost() = %v, want %v", findNVMeMountpointForHost([]byte(LsblkJson), "worker"), "/mnt/nvme3n1")
+	}
+}
+
+func Test_findNVMeMountpoint_avoids_nvme1n1_and_nvme2n1_on_h100_h800_hosts(t *testing.T) {
+	LsblkJson := `{
+   "blockdevices": [
+	{
+         "name": "nbd7",
+         "type": "disk",
+         "size": "0B",
+         "tran": null,
+         "mountpoint": null
+      },{
+         "name": "nvme0n1",
+         "type": "disk",
+         "size": "3.5T",
+         "tran": "nvme",
+         "mountpoint": "/mnt/nvme0n1"
+      },{
+         "name": "nvme1n1",
+         "type": "disk",
+         "size": "3.5T",
+         "tran": "nvme",
+         "mountpoint": "/mnt/nvme1n1"
+      },{
+         "name": "nvme2n1",
+         "type": "disk",
+         "size": "3.5T",
+         "tran": "nvme",
+         "mountpoint": "/mnt/nvme2n1"
+      }
+	]
+}`
+	for _, hostname := range []string{"gpu-h100-0", "gpu-h800-0"} {
+		if findNVMeMountpointForHost([]byte(LsblkJson), hostname) != "/mnt/nvme0n1" {
+			t.Errorf("findNVMeMountpointForHost(%q) = %v, want %v", hostname, findNVMeMountpointForHost([]byte(LsblkJson), hostname), "/mnt/nvme0n1")
+		}
+	}
+}
+
+func Test_findNVMeMountpoint_avoids_nvme1n1_on_h200_hosts(t *testing.T) {
+	LsblkJson := `{
+   "blockdevices": [
+      {"name":"nvme0n1", "type":"disk", "size":"3.5T", "tran":"nvme", "mountpoint":"/mnt/nvme0n1"},
+      {"name":"nvme1n1", "type":"disk", "size":"3.5T", "tran":"nvme", "mountpoint":"/mnt/nvme1n1"}
+   ]
+}`
+	if findNVMeMountpointForHost([]byte(LsblkJson), "gpu-h200-0") != "/mnt/nvme0n1" {
+		t.Errorf("findNVMeMountpointForHost() = %v, want %v", findNVMeMountpointForHost([]byte(LsblkJson), "gpu-h200-0"), "/mnt/nvme0n1")
+	}
+}
+
+func Test_findNVMeMountpoint_uses_nvme2n1_when_no_other_choice(t *testing.T) {
+	LsblkJson := `{
+   "blockdevices": [
+      {"name":"nvme2n1", "type":"disk", "size":"2T", "tran":"nvme", "mountpoint":"/.host/mnt/nvme2n1"}
+   ]
+}`
+	if findNVMeMountpointForHost([]byte(LsblkJson), "worker-gpu-h100-0") != "/mnt/nvme2n1" {
+		t.Errorf("findNVMeMountpointForHost() = %v, want %v", findNVMeMountpointForHost([]byte(LsblkJson), "worker-gpu-h100-0"), "/mnt/nvme2n1")
+	}
+}
+
+func Test_findNVMeMountpoint_uses_nvme1n1_when_no_other_choice(t *testing.T) {
+	LsblkJson := `{
+   "blockdevices": [
+      {"name":"nvme1n1", "type":"disk", "size":"2T", "tran":"nvme", "mountpoint":"/mnt/nvme1n1"}
+   ]
+}`
+	if findNVMeMountpointForHost([]byte(LsblkJson), "worker-gpu-h200-0") != "/mnt/nvme1n1" {
+		t.Errorf("findNVMeMountpointForHost() = %v, want %v", findNVMeMountpointForHost([]byte(LsblkJson), "worker-gpu-h200-0"), "/mnt/nvme1n1")
+	}
+}
+
 func Test_avoid_root_volume(t *testing.T) {
 	LsblkJson := `{
    "blockdevices": [

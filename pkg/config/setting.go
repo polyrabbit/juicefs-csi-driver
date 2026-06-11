@@ -410,7 +410,7 @@ func genCacheDirs(jfsSetting *JfsSetting, volCtx map[string]string) error {
 				}
 			}
 		}
-		if !hasRemoteCache {
+		if !hasRemoteCache {  // let globalConfig overrides default value
 			options = append(options, "remote-cache=prod")
 		}
 		if d == "memory" {

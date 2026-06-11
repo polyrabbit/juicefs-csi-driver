@@ -6,7 +6,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"sort"
 	"strings"
 	"sync/atomic"
 	"syscall"
@@ -133,51 +132,74 @@ func (d *Device) StripSysRoot() string {
 	return strings.TrimPrefix(d.Mountpoint, hostRoot)
 }
 
-func (d *Device) LargestMp() string {
-	if d.Mountpoint != "" {
-		return d.Mountpoint
-	}
-	var largestPart Device
-	for _, device := range d.Children {
-		if device.ByteSize() >= largestPart.ByteSize() && device.IsDir() {
-			largestPart = device
-		}
-	}
-	return largestPart.Mountpoint
-}
-
 type LsblkOutput struct {
 	Blockdevices []Device `json:"blockdevices"`
 }
 
 func findNVMeMountpoint(output []byte) string {
+	hostname, _ := os.Hostname()
+	return findNVMeMountpointForHost(output, hostname)
+}
+
+func findNVMeMountpointForHost(output []byte, hostname string) string {
 	var lsblkOutput LsblkOutput
 	if err := json.Unmarshal(output, &lsblkOutput); err != nil {
 		klog.Warningf("Error parsing lsblk output: %v", err)
 		return ""
 	}
 
-	devices := lsblkOutput.Blockdevices
-	sort.Slice(devices, func(i, j int) bool { // Prefer last one
-		return devices[i].LargestMp() < devices[j].LargestMp()
-	})
-
 	var candidate Device
-	for _, device := range devices {
+	for _, device := range lsblkOutput.Blockdevices {
 		if device.Tran != "nvme" {
 			continue
 		}
-		// Prefer the last one, if capacity is the same
-		if device.ByteSize() >= candidate.ByteSize() && device.IsDir() {
+		if device.IsDir() && preferCacheDirCandidate(hostname, candidate, device) {
 			candidate = device
 		}
-		for _, device = range device.Children { // Donot check tran for children
-			if device.ByteSize() >= candidate.ByteSize() && device.IsDir() {
-				candidate = device
+		for _, child := range device.Children { // Donot check tran for children
+			if child.IsDir() && preferCacheDirCandidate(hostname, candidate, child) {
+				candidate = child
 			}
 		}
 	}
 	return candidate.StripSysRoot()
+}
+
+func preferCacheDirCandidate(hostname string, cur, next Device) bool {
+	if cur.Mountpoint == "" {
+		return true
+	}
+
+	curAvoid := avoidCacheDirOnHost(hostname, cur.StripSysRoot())
+	nextAvoid := avoidCacheDirOnHost(hostname, next.StripSysRoot())
+	if curAvoid && !nextAvoid {
+		klog.Infof("Prefer cache dir %q over avoided cache dir %q on host %q", next.StripSysRoot(), cur.StripSysRoot(), hostname)
+		return true
+	}
+	if !curAvoid && nextAvoid {
+		klog.Infof("Skip avoided cache dir %q on host %q", next.StripSysRoot(), hostname)
+		return false
+	}
+
+	if next.ByteSize() != cur.ByteSize() {
+		return next.ByteSize() > cur.ByteSize()
+	}
+	return next.StripSysRoot() > cur.StripSysRoot() // Prefer the last one, if capacity is the same
+}
+
+func avoidCacheDirOnHost(hostname, mountpoint string) bool {
+	switch mountpoint {
+	case "/mnt/nvme1n1":
+		return strings.Contains(hostname, "gpu-h200") ||
+			strings.Contains(hostname, "gpu-h100") ||
+			strings.Contains(hostname, "gpu-h800")
+	case "/mnt/nvme2n1":
+		return strings.Contains(hostname, "gpu-h100") ||
+			strings.Contains(hostname, "gpu-h800") ||
+			strings.Contains(hostname, "gpu-b300") ||
+			strings.Contains(hostname, "mc-gpu-a800")
+	}
+	return false
 }
 
 func updateLocalCache() {

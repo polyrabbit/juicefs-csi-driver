@@ -410,8 +410,16 @@ func genCacheDirs(jfsSetting *JfsSetting, volCtx map[string]string) error {
 				}
 			}
 		}
-		if !hasRemoteCache {  // let globalConfig overrides default value
-			options = append(options, "remote-cache=prod")
+		if !hasRemoteCache {
+			// "qy1-*" volumes live in the qy region (served by prod-qy); everything
+			// else falls back to the default prod cluster. The rule is defined by OSS.
+
+			// globalConfig can still override this value.
+			remoteCache := "prod"
+			if strings.HasPrefix(jfsSetting.Name, "qy1-") {
+				remoteCache = "prod-qy"
+			}
+			options = append(options, "remote-cache="+remoteCache)
 		}
 		if d == "memory" {
 			options = append(options, "cache-size=2G", "cache-expire=3h")

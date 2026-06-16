@@ -535,7 +535,7 @@ func (p *PodMount) GetJfsVolUUID(ctx context.Context, jfsSetting *jfsConfig.JfsS
 
 	cmdCtx, cmdCancel := context.WithTimeout(ctx, 8*defaultCheckTimeout)
 	defer cmdCancel()
-	statusCmd := p.Exec.CommandContext(cmdCtx, jfsConfig.CeCliPath, "status", jfsSetting.Source)
+	statusCmd := p.Exec.CommandContext(cmdCtx, jfsConfig.CeCliPath, "config", jfsSetting.Source)
 	envs := syscall.Environ()
 	for key, val := range jfsSetting.Envs {
 		envs = append(envs, fmt.Sprintf("%s=%s", security.EscapeBashStr(key), security.EscapeBashStr(val)))

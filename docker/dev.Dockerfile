@@ -14,6 +14,10 @@
 
 FROM hub.i.basemind.com/csi/juicedata/juicefs-csi-driver:v0.24.0
 
-COPY juicefs-csi-driver /usr/local/bin/juicefs-csi-driver
+ARG TARGETARCH
+COPY juicefs-csi-driver-amd64 /tmp/juicefs-csi-driver-amd64
+COPY juicefs-csi-driver-arm64 /tmp/juicefs-csi-driver-arm64
+RUN cp /tmp/juicefs-csi-driver-${TARGETARCH} /usr/local/bin/juicefs-csi-driver && \
+    rm -f /tmp/juicefs-csi-driver-amd64 /tmp/juicefs-csi-driver-arm64
 
 ENTRYPOINT ["/tini", "-g", "--", "juicefs-csi-driver"]

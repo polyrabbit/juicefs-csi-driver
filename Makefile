@@ -22,6 +22,7 @@ IMAGE?=hub.i.basemind.com/csi/juicedata/juicefs-csi-driver
 REGISTRY?=docker.io
 DASHBOARD_IMAGE?=juicedata/csi-dashboard
 TARGETARCH?=amd64
+PLATFORMS?=linux/amd64,linux/arm64
 VERSION=$(shell git describe --tags --match 'v*' --always --dirty)
 GIT_BRANCH?=$(shell git rev-parse --abbrev-ref HEAD)
 GIT_COMMIT?=$(shell git rev-parse HEAD)
@@ -40,6 +41,9 @@ GOBIN=$(shell pwd)/bin
 juicefs-csi-driver:
 	mkdir -p bin
 	CGO_ENABLED=0 GOOS=linux go build -ldflags ${LDFLAGS} -o bin/juicefs-csi-driver ./cmd/
+	for arch in amd64 arm64; do \
+		CGO_ENABLED=0 GOOS=linux GOARCH=$$arch go build -ldflags ${LDFLAGS} -o bin/juicefs-csi-driver-$$arch ./cmd/; \
+	done
 
 .PHONY: verify
 verify:
@@ -95,9 +99,7 @@ uninstall: yaml
 # build dev image
 .PHONY: image-dev
 image-dev: juicefs-csi-driver dashboard
-	$(CONTAINER_CMD) build --build-arg TARGETARCH=$(TARGETARCH) -t $(IMAGE):$(DEV_TAG) -f docker/dev.Dockerfile --push bin
-	#docker build --build-context project=. --build-context ui=dashboard-ui-v2/ -f docker/dashboard.Dockerfile \
-#		-t $(REGISTRY)/$(DASHBOARD_IMAGE):$(DEV_TAG) .
+	docker buildx build --platform $(PLATFORMS) -t $(IMAGE):$(DEV_TAG) -f docker/dev.Dockerfile --push bin
 
 # push dev image
 .PHONY: push-dev

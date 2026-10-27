@@ -213,6 +213,29 @@ func Test_findNVMeMountpoint_uses_nvme1n1_when_no_other_choice(t *testing.T) {
 	}
 }
 
+func Test_findNVMeMountpoint_prefers_mnt_share_over_larger_lv(t *testing.T) {
+	rootDisk := `{"name":"nvme0n1", "type":"disk", "size":"7T", "tran":"nvme", "mountpoint":null,
+         "children": [
+            {"name":"nvme0n1p1", "type":"part", "size":"500M", "tran":"nvme", "mountpoint":"/.host/boot/efi"},
+            {"name":"nvme0n1p2", "type":"part", "size":"500M", "tran":"nvme", "mountpoint":"/.host/boot"},
+            {"name":"nvme0n1p3", "type":"part", "size":"7T", "tran":"nvme", "mountpoint":null,
+               "children": [{"name":"vg0-lv_root", "type":"lvm", "size":"7T", "tran":null, "mountpoint":"/.host"}]}
+         ]}`
+	lvs := `{"name":"vg1-lv_k8s", "type":"lvm", "size":"1T", "tran":null, "mountpoint":"/.host/mnt/k8s"},
+            {"name":"vg1-lv_jfs", "type":"lvm", "size":"3.5T", "tran":null, "mountpoint":"/.host/mnt/jfs"},
+            {"name":"vg1-lv_share", "type":"lvm", "size":"2.5T", "tran":null, "mountpoint":"/.host/mnt/share"}`
+	for name, dataDisk := range map[string]string{
+		"lv_on_disk": `{"name":"nvme1n1", "type":"disk", "size":"7T", "tran":"nvme", "mountpoint":null, "children": [` + lvs + `]}`,
+		"lv_on_part": `{"name":"nvme1n1", "type":"disk", "size":"7T", "tran":"nvme", "mountpoint":null, "children": [
+            {"name":"nvme1n1p1", "type":"part", "size":"7T", "tran":"nvme", "mountpoint":null, "children": [` + lvs + `]}]}`,
+	} {
+		LsblkJson := `{"blockdevices": [` + rootDisk + `, ` + dataDisk + `]}`
+		if got := findNVMeMountpointForHost([]byte(LsblkJson), "worker"); got != "/mnt/share" {
+			t.Errorf("%s: findNVMeMountpointForHost() = %v, want %v", name, got, "/mnt/share")
+		}
+	}
+}
+
 func Test_avoid_root_volume(t *testing.T) {
 	LsblkJson := `{
    "blockdevices": [

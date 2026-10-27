@@ -46,24 +46,31 @@ func LocalCacheDir(volume string, preferGPFS GpfsCache) (localCache string, gpfs
 	// 	return "memory", gpfsCache // force to use icfs, delete me later
 	// }
 	localCache = localCacheDir.Load().(string)
-	freeLimit := nvmeLimit
-	if inRootVolume(hostRoot + localCache) {
-		freeLimit = sysRootLimit
+	if localCache == "memory" {
+		return localCache, gpfsCache
 	}
-	pct, avail, ipct, _ := diskFreePct(hostRoot + localCache)
+	if inRootVolume(hostRoot + localCache) { // NVMe may be unmounted after the last probe
+		klog.Warningf("Cache dir %q is on system disk, will use memory", localCache)
+		return "memory", gpfsCache
+	}
+	pct, avail, ipct, err := diskFreePct(hostRoot + localCache)
+	if err != nil { // e.g. EIO on a failing disk
+		klog.Warningf("Cache dir %q is unavailable: %v, will use memory", localCache, err)
+		return "memory", gpfsCache
+	}
 	if avail < 2*1024*1024*1024 {
 		klog.Warningf("Cache dir %q is almost full, free pct=%.2f%%, avail=%s*, will use memory", localCache, pct*100, humanize.IBytes(avail))
 		return "memory", gpfsCache
 	}
-	if (pct < freeLimit || ipct < freeLimit) && !cacheDirHasChunk(hostRoot+localCache) { // some volumes do not clean cache at exit
+	if (pct < nvmeLimit || ipct < nvmeLimit) && !cacheDirHasChunk(hostRoot+localCache) { // some volumes do not clean cache at exit
 		klog.Warningf("Cache dir %q is almost full, free pct=%.2f%%*, ipct=%.2f%%, avail=%s, no chunk found, will use memory", localCache, pct*100, ipct*100, humanize.IBytes(avail))
 		return "memory", gpfsCache
 	}
-	return localCacheDir.Load().(string), gpfsCache
+	return localCache, gpfsCache
 }
 
 func init() {
-	localCacheDir.Store("/var/jfsCache")
+	localCacheDir.Store("memory")
 	probeFinished := false
 
 	go func() {
@@ -71,9 +78,9 @@ func init() {
 			probeFinished = true
 		}()
 		updateLocalCache()
-		if lastGpfsCache := findGPFSCache(""); lastGpfsCache != "" {
-			klog.Infof("GPFS cache path: %q available", lastGpfsCache)
-		}
+		// if lastGpfsCache := findGPFSCache(""); lastGpfsCache != "" {
+		// 	klog.Infof("GPFS cache path: %q available", lastGpfsCache)
+		// }
 	}()
 
 	go func() {
@@ -112,11 +119,11 @@ func (d *Device) ByteSize() uint64 {
 }
 
 func (d *Device) IsDir() bool {
-	if inUT {
-		return true
-	}
 	if d.Mountpoint == "" {
 		return false
+	}
+	if inUT {
+		return true
 	}
 	if st, err := os.Stat(d.Mountpoint); err != nil {
 		klog.Warningf("Error stating mountpoint: %q, err: %v", d.Mountpoint, err)
@@ -126,6 +133,23 @@ func (d *Device) IsDir() bool {
 		return false
 	}
 	return true
+}
+
+// OnSystemDisk compares st_dev since lsblk may report any bind mount of the system disk as mountpoint.
+// Recurse because root may live in an LV under a partition.
+func (d *Device) OnSystemDisk() bool {
+	if inUT {
+		return false
+	}
+	if d.Mountpoint != "" && inRootVolume(d.Mountpoint) {
+		return true
+	}
+	for _, c := range d.Children {
+		if c.OnSystemDisk() {
+			return true
+		}
+	}
+	return false
 }
 
 func (d *Device) StripSysRoot() string {
@@ -149,18 +173,21 @@ func findNVMeMountpointForHost(output []byte, hostname string) string {
 	}
 
 	var candidate Device
-	for _, device := range lsblkOutput.Blockdevices {
-		if device.Tran != "nvme" {
+	var visit func(*Device)
+	visit = func(device *Device) {
+		if device.IsDir() && preferCacheDirCandidate(hostname, candidate, *device) {
+			candidate = *device
+		}
+		for i := range device.Children {
+			visit(&device.Children[i])
+		}
+	}
+	for i := range lsblkOutput.Blockdevices {
+		device := &lsblkOutput.Blockdevices[i]
+		if device.Tran != "nvme" || device.OnSystemDisk() {
 			continue
 		}
-		if device.IsDir() && preferCacheDirCandidate(hostname, candidate, device) {
-			candidate = device
-		}
-		for _, child := range device.Children { // Donot check tran for children
-			if child.IsDir() && preferCacheDirCandidate(hostname, candidate, child) {
-				candidate = child
-			}
-		}
+		visit(device)
 	}
 	return candidate.StripSysRoot()
 }
@@ -170,21 +197,25 @@ func preferCacheDirCandidate(hostname string, cur, next Device) bool {
 		return true
 	}
 
-	curAvoid := avoidCacheDirOnHost(hostname, cur.StripSysRoot())
-	nextAvoid := avoidCacheDirOnHost(hostname, next.StripSysRoot())
+	curMp, nextMp := cur.StripSysRoot(), next.StripSysRoot()
+	curAvoid := avoidCacheDirOnHost(hostname, curMp)
+	nextAvoid := avoidCacheDirOnHost(hostname, nextMp)
 	if curAvoid && !nextAvoid {
-		klog.Infof("Prefer cache dir %q over avoided cache dir %q on host %q", next.StripSysRoot(), cur.StripSysRoot(), hostname)
+		klog.Infof("Prefer cache dir %q over avoided cache dir %q on host %q", nextMp, curMp, hostname)
 		return true
 	}
 	if !curAvoid && nextAvoid {
-		klog.Infof("Skip avoided cache dir %q on host %q", next.StripSysRoot(), hostname)
+		klog.Infof("Skip avoided cache dir %q on host %q", nextMp, hostname)
 		return false
 	}
 
+	if curShare, nextShare := curMp == "/mnt/share", nextMp == "/mnt/share"; curShare != nextShare {
+		return nextShare // always prefer /mnt/share regardless of size
+	}
 	if next.ByteSize() != cur.ByteSize() {
 		return next.ByteSize() > cur.ByteSize()
 	}
-	return next.StripSysRoot() > cur.StripSysRoot() // Prefer the last one, if capacity is the same
+	return nextMp > curMp // Prefer the last one, if capacity is the same
 }
 
 func avoidCacheDirOnHost(hostname, mountpoint string) bool {
@@ -203,18 +234,19 @@ func avoidCacheDirOnHost(hostname, mountpoint string) bool {
 }
 
 func updateLocalCache() {
-	cmd := exec.Command("lsblk", "--json", "-o", "NAME,TYPE,SIZE,TRAN,MOUNTPOINT")
-	output, err := cmd.Output()
+	output, err := exec.Command("lsblk", "--json", "-o", "NAME,TYPE,SIZE,TRAN,MOUNTPOINT").Output()
 	if err != nil {
 		klog.Warningf("Error executing lsblk, output: %q, err: %v", output, err)
-	} else {
-		if mp := findNVMeMountpoint(output); mp != "" {
-			localCacheDir.Store(mp + "/jfsCache")
-			klog.Infof("Found NVMe mountpoint: %q", mp)
-		} else {
-			klog.Infof("NVMe mountpoint not found from lsblk output: %q", output)
-		}
+		return // keep the last probed value
 	}
+	cacheDir := "memory"
+	if mp := findNVMeMountpoint(output); mp != "" {
+		cacheDir = mp + "/jfsCache"
+		klog.Infof("Found NVMe mountpoint: %q", mp)
+	} else {
+		klog.Infof("NVMe mountpoint not found from lsblk output: %q", output)
+	}
+	localCacheDir.Store(cacheDir)
 }
 
 func findGPFSCache(volume string) string {
@@ -304,7 +336,9 @@ func deviceOfPath(path string) (syscall.Stat_t, string) {
 }
 
 func diskFreePct(path string) (float64, uint64, float64, error) {
-	_, path = deviceOfPath(path) // avoid "no such file or directory"
+	if _, existing := deviceOfPath(path); existing != "" {
+		path = existing // walk up to an existing dir; on stat error keep path so Statfs reports the real errno
+	}
 	var stat syscall.Statfs_t
 	if err := syscall.Statfs(path, &stat); err != nil {
 		klog.Warningf("Statfs `%s`: %s", path, err)

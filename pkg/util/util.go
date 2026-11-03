@@ -45,10 +45,6 @@ const (
 	procMountInfoPath                    = "/proc/self/mountinfo"
 )
 
-func init() {
-	rand.Seed(time.Now().UnixNano())
-}
-
 type mountInfo struct {
 	// Unique ID for the mount (maybe reused after umount).
 	id int
@@ -444,20 +440,27 @@ func ParseToBytes(value string) (uint64, error) {
 	return uint64(val), nil
 }
 
-var nextPort int32 = 20000-1
+const (
+	startPort = 20000
+	endPort   = 29000
+)
 
-// GetAvailablePort returns next available port number between [20000, 30000) in thread-safe way.
+var nextPort int32
+
+func init() {
+	rand.Seed(time.Now().UnixNano())
+	// Randomize starting port to reduce conflicts after CSI node restarts.
+	nextPort = int32(startPort + rand.Intn(endPort-startPort) - 1)
+}
+
+// GetAvailablePort returns next available port number between [20000, 30000).
 func GetAvailablePort() int {
-	const (
-		startPort = 20000-1
-		endPort   = 30000
-		maxTries  = 10000
-	)
+	const maxTries = endPort - startPort
 	for i := 0; i < maxTries; i++ {
 		port := atomic.AddInt32(&nextPort, 1)
 		if port >= endPort {
 			// Wrap around to stay in range
-			atomic.CompareAndSwapInt32(&nextPort, port, startPort)
+			atomic.CompareAndSwapInt32(&nextPort, port, startPort-1)
 			continue
 		}
 		// Test if port is available by listen on it
